@@ -1,5 +1,6 @@
 const { checkLogin } = require("../util-server");
 const Database = require("../database");
+const knex = require("knex");
 
 /**
  * Handlers for database
@@ -35,6 +36,21 @@ module.exports.databaseSocketHandler = (socket) => {
                 ok: false,
                 msg: error.message,
             });
+        }
+    });
+
+    socket.on("testDbConnection", async (config, callback) => {
+        let k;
+        try {
+            checkLogin(socket);
+            const pgConfig = Database.buildPostgresConfig({ ...config, type: "postgres" }, 1);
+            k = knex(pgConfig);
+            await k.raw("SELECT 1");
+            callback({ ok: true });
+        } catch (e) {
+            callback({ ok: false, error: e.message });
+        } finally {
+            if (k) await k.destroy().catch(() => {});
         }
     });
 };
