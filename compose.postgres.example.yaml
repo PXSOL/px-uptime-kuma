@@ -1,0 +1,42 @@
+# Example: Uptime Kuma + PostgreSQL via docker-compose.
+# Copy to compose.yaml (or extend the existing one) and edit the
+# secrets / hostnames for your environment.
+#
+# See docs/postgres.md for the full env-var reference.
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      UPTIME_KUMA_DB_TYPE: postgres
+      UPTIME_KUMA_DB_HOSTNAME: db
+      UPTIME_KUMA_DB_PORT: "5432"
+      UPTIME_KUMA_DB_NAME: kuma
+      UPTIME_KUMA_DB_USERNAME: kuma
+      UPTIME_KUMA_DB_PASSWORD: change-me
+      # Disable TLS for a docker-compose-local Postgres. Use require / verify-full
+      # against managed Postgres (RDS / Supabase / Neon / etc).
+      UPTIME_KUMA_DB_SSL_MODE: disable
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "3001:3001"
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kuma
+      POSTGRES_USER: kuma
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - ./pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kuma -d kuma"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

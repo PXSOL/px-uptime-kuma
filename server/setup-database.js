@@ -9,6 +9,38 @@ const mysql = require("mysql2/promise");
 const { isSSL, sslKey, sslCert, sslKeyPassphrase } = require("./config");
 const https = require("https");
 
+/*
+ * Environment variables recognized by this setup pipeline.
+ * All vars also support a `_FILE` variant pointing at a file path,
+ * for use with Docker secrets. See getEnvOrFile().
+ *
+ * Common:
+ *   UPTIME_KUMA_DB_TYPE          sqlite | mariadb | embedded-mariadb | postgres
+ *
+ * MariaDB / MySQL (UPTIME_KUMA_DB_TYPE=mariadb):
+ *   UPTIME_KUMA_DB_HOSTNAME      hostname (or use UPTIME_KUMA_DB_SOCKET)
+ *   UPTIME_KUMA_DB_PORT          port (default 3306)
+ *   UPTIME_KUMA_DB_NAME          database name
+ *   UPTIME_KUMA_DB_USERNAME      user
+ *   UPTIME_KUMA_DB_PASSWORD      password
+ *   UPTIME_KUMA_DB_SOCKET        unix socket path (alternative to host:port)
+ *   UPTIME_KUMA_DB_SSL           "true" to enable TLS
+ *   UPTIME_KUMA_DB_CA            PEM-encoded CA certificate
+ *
+ * PostgreSQL (UPTIME_KUMA_DB_TYPE=postgres):
+ *   UPTIME_KUMA_DB_URL           full connection string; takes precedence over fields
+ *                                e.g. postgres://user:pass@host:5432/kuma?sslmode=require
+ *   --- or ---
+ *   UPTIME_KUMA_DB_HOSTNAME      hostname
+ *   UPTIME_KUMA_DB_PORT          port (default 5432)
+ *   UPTIME_KUMA_DB_NAME          database name (default "kuma")
+ *   UPTIME_KUMA_DB_USERNAME      user
+ *   UPTIME_KUMA_DB_PASSWORD      password
+ *   UPTIME_KUMA_DB_SSL_MODE      disable | require | verify-ca | verify-full
+ *   UPTIME_KUMA_DB_SSL_CA        PEM-encoded CA certificate (required for verify-*)
+ *   UPTIME_KUMA_DB_SCHEMA        optional schema for search_path (default "public")
+ */
+
 /**
  * Reads a configuration value from an environment variable or a Docker secrets file.
  * If both the direct env var and the _FILE variant are set, an error is thrown.
