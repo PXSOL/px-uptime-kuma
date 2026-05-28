@@ -98,16 +98,48 @@ class SetupDatabase {
         if (process.env.UPTIME_KUMA_DB_TYPE) {
             this.needSetup = false;
             log.info("setup-database", "UPTIME_KUMA_DB_TYPE is provided by env, try to override db-config.json");
-            dbConfig.type = process.env.UPTIME_KUMA_DB_TYPE;
-            dbConfig.hostname = process.env.UPTIME_KUMA_DB_HOSTNAME;
-            dbConfig.port = process.env.UPTIME_KUMA_DB_PORT;
-            dbConfig.dbName = process.env.UPTIME_KUMA_DB_NAME;
-            dbConfig.username = getEnvOrFile("UPTIME_KUMA_DB_USERNAME");
-            dbConfig.password = getEnvOrFile("UPTIME_KUMA_DB_PASSWORD");
-            dbConfig.socketPath = process.env.UPTIME_KUMA_DB_SOCKET?.trim();
-            dbConfig.ssl = getEnvOrFile("UPTIME_KUMA_DB_SSL")?.toLowerCase() === "true";
-            dbConfig.ca = getEnvOrFile("UPTIME_KUMA_DB_CA");
-            Database.writeDBConfig(dbConfig);
+
+            if (process.env.UPTIME_KUMA_DB_TYPE === "postgres") {
+                log.info("setup-database", "Configuring PostgreSQL from environment variables");
+                const url = getEnvOrFile("UPTIME_KUMA_DB_URL");
+                const sslMode = process.env.UPTIME_KUMA_DB_SSL_MODE || undefined;
+                const ca = getEnvOrFile("UPTIME_KUMA_DB_SSL_CA") || undefined;
+                const schema = process.env.UPTIME_KUMA_DB_SCHEMA || undefined;
+
+                if (url) {
+                    dbConfig = {
+                        type: "postgres",
+                        url,
+                        ...(sslMode !== undefined && { sslMode }),
+                        ...(ca !== undefined && { ca }),
+                        ...(schema !== undefined && { schema }),
+                    };
+                } else {
+                    dbConfig = {
+                        type: "postgres",
+                        hostname: getEnvOrFile("UPTIME_KUMA_DB_HOSTNAME"),
+                        port: process.env.UPTIME_KUMA_DB_PORT || "5432",
+                        dbName: getEnvOrFile("UPTIME_KUMA_DB_DATABASE") || "kuma",
+                        username: getEnvOrFile("UPTIME_KUMA_DB_USERNAME"),
+                        password: getEnvOrFile("UPTIME_KUMA_DB_PASSWORD"),
+                        ...(sslMode !== undefined && { sslMode }),
+                        ...(ca !== undefined && { ca }),
+                        ...(schema !== undefined && { schema }),
+                    };
+                }
+                Database.writeDBConfig(dbConfig);
+            } else {
+                dbConfig.type = process.env.UPTIME_KUMA_DB_TYPE;
+                dbConfig.hostname = process.env.UPTIME_KUMA_DB_HOSTNAME;
+                dbConfig.port = process.env.UPTIME_KUMA_DB_PORT;
+                dbConfig.dbName = process.env.UPTIME_KUMA_DB_NAME;
+                dbConfig.username = getEnvOrFile("UPTIME_KUMA_DB_USERNAME");
+                dbConfig.password = getEnvOrFile("UPTIME_KUMA_DB_PASSWORD");
+                dbConfig.socketPath = process.env.UPTIME_KUMA_DB_SOCKET?.trim();
+                dbConfig.ssl = getEnvOrFile("UPTIME_KUMA_DB_SSL")?.toLowerCase() === "true";
+                dbConfig.ca = getEnvOrFile("UPTIME_KUMA_DB_CA");
+                Database.writeDBConfig(dbConfig);
+            }
         }
     }
 
