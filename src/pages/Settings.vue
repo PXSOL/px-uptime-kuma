@@ -118,6 +118,9 @@ export default {
                 proxies: {
                     title: this.$t("Proxies"),
                 },
+                database: {
+                    title: this.$t("Database"),
+                },
                 about: {
                     title: this.$t("About"),
                 },
