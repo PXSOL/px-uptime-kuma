@@ -128,6 +128,73 @@ class Database {
     static knexMigrationsPath = "./db/knex_migrations";
 
     /**
+     * Accepted SQL client types
+     * @type {string[]}
+     */
+    static acceptedSqlClient = ["sqlite", "mariadb", "embedded-mariadb", "postgres"];
+
+    /**
+     * Non-SQLite client types (real databases)
+     * @type {string[]}
+     */
+    static noSqliteClient = ["mariadb", "embedded-mariadb", "postgres"];
+
+    /**
+     * Build a Knex configuration object for a PostgreSQL connection.
+     * @param {object} dbConfig Database configuration object
+     * @param {number} maxPool Maximum number of pool connections
+     * @returns {object} Knex configuration object
+     */
+    static buildPostgresConfig(dbConfig, maxPool) {
+        let connection;
+        if (dbConfig.url) {
+            connection = dbConfig.url;
+        } else {
+            connection = {
+                host: dbConfig.hostname,
+                port: dbConfig.port ? parseInt(dbConfig.port) : 5432,
+                user: dbConfig.username,
+                password: dbConfig.password,
+                database: dbConfig.dbName,
+            };
+        }
+
+        const sslMode = dbConfig.sslMode || (dbConfig.ssl ? "require" : "disable");
+        let ssl;
+        if (sslMode !== "disable") {
+            ssl = {
+                rejectUnauthorized: sslMode === "verify-ca" || sslMode === "verify-full",
+            };
+            if (dbConfig.ca && dbConfig.ca.trim() !== "") {
+                ssl.ca = dbConfig.ca;
+            }
+        }
+
+        let config;
+        if (typeof connection === "string") {
+            config = {
+                client: "pg",
+                connection: ssl ? { connectionString: connection, ssl } : { connectionString: connection },
+            };
+        } else {
+            if (ssl) connection.ssl = ssl;
+            config = { client: "pg", connection };
+        }
+
+        config.pool = {
+            min: 0,
+            max: maxPool,
+            idleTimeoutMillis: 30000,
+        };
+
+        if (dbConfig.schema && dbConfig.schema.trim() !== "") {
+            config.searchPath = [dbConfig.schema, "public"];
+        }
+
+        return config;
+    }
+
+    /**
      * Initialize the data directory
      * @param {object} args Arguments to initialize DB with
      * @returns {void}
@@ -405,6 +472,8 @@ class Database {
                 },
                 pool: mariadbPoolConfig,
             };
+        } else if (dbConfig.type === "postgres") {
+            config = Database.buildPostgresConfig(dbConfig, parsedMaxPoolConnections);
         } else {
             throw new Error("Unknown Database type: " + dbConfig.type);
         }
@@ -442,6 +511,8 @@ class Database {
             }
         } else if (dbConfig.type.endsWith("mariadb")) {
             await this.initMariaDB();
+        } else if (dbConfig.type === "postgres") {
+            await this.initPostgres();
         }
     }
 
@@ -491,6 +562,21 @@ class Database {
             await createTables();
         } else {
             log.debug("db", "MariaDB database already exists");
+        }
+    }
+
+    /**
+     * Initialize Postgres base schema if it doesn't exist yet
+     * @returns {Promise<void>}
+     */
+    static async initPostgres() {
+        log.debug("db", "Checking if Postgres base schema exists...");
+        const hasTable = await R.hasTable("docker_host");
+        if (!hasTable) {
+            const { createTables } = require("../db/knex_init_db");
+            await createTables();
+        } else {
+            log.debug("db", "Postgres base schema already exists");
         }
     }
 

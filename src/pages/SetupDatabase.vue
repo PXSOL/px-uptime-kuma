@@ -64,6 +64,16 @@
                         value="sqlite"
                     />
                     <label class="btn btn-outline-primary" for="btnradio1">SQLite</label>
+
+                    <input
+                        id="btnradio4"
+                        v-model="dbConfig.type"
+                        type="radio"
+                        class="btn-check"
+                        autocomplete="off"
+                        value="postgres"
+                    />
+                    <label class="btn btn-outline-primary" for="btnradio4">PostgreSQL</label>
                 </div>
 
                 <div v-if="dbConfig.type === 'embedded-mariadb'" class="mt-3 short">
@@ -76,6 +86,10 @@
 
                 <div v-if="dbConfig.type === 'sqlite'" class="mt-3 short">
                     {{ $t("setupDatabaseSQLite") }}
+                </div>
+
+                <div v-if="dbConfig.type === 'postgres'" class="mt-3 short">
+                    {{ $t("setupDatabasePostgres") }}
                 </div>
 
                 <template v-if="dbConfig.type === 'mariadb'">
@@ -167,6 +181,79 @@
                     </div>
                 </template>
 
+                <template v-if="dbConfig.type === 'postgres'">
+                    <div class="mt-3 short text-start">
+                        <div class="form-check form-switch ps-0">
+                            <input
+                                id="useConnStringCheck"
+                                v-model="dbConfig.useConnectionString"
+                                type="checkbox"
+                                role="switch"
+                                class="form-check-input ms-0 me-2"
+                            />
+                            <label class="form-check-label fw-bold" for="useConnStringCheck">
+                                {{ $t("postgresUseConnectionString") }}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div v-if="dbConfig.useConnectionString" class="form-floating mt-3 short">
+                        <textarea
+                            id="pgUrl"
+                            v-model="dbConfig.url"
+                            class="form-control"
+                            style="height: 90px"
+                            placeholder="postgres://user:pass@host:5432/db"
+                            required
+                        />
+                        <label for="pgUrl">Connection String</label>
+                    </div>
+
+                    <template v-else>
+                        <div class="form-floating mt-3 short">
+                            <input v-model="dbConfig.hostname" type="text" class="form-control" required />
+                            <label>{{ $t("Hostname") }}</label>
+                        </div>
+                        <div class="form-floating mt-3 short">
+                            <input v-model="dbConfig.port" type="text" class="form-control" required placeholder="5432" />
+                            <label>{{ $t("Port") }}</label>
+                        </div>
+                        <div class="form-floating mt-3 short">
+                            <input v-model="dbConfig.username" type="text" class="form-control" required />
+                            <label>{{ $t("Username") }}</label>
+                        </div>
+                        <div class="form-floating mt-3 short">
+                            <input v-model="dbConfig.password" type="password" class="form-control" required />
+                            <label>{{ $t("Password") }}</label>
+                        </div>
+                        <div class="form-floating mt-3 short">
+                            <input v-model="dbConfig.dbName" type="text" class="form-control" required />
+                            <label>{{ $t("dbName") }}</label>
+                        </div>
+                    </template>
+
+                    <div class="form-floating mt-3 short">
+                        <select id="pgSslMode" v-model="dbConfig.sslMode" class="form-select">
+                            <option value="disable">disable</option>
+                            <option value="require">require</option>
+                            <option value="verify-ca">verify-ca</option>
+                            <option value="verify-full">verify-full</option>
+                        </select>
+                        <label for="pgSslMode">{{ $t("postgresSslMode") }}</label>
+                    </div>
+
+                    <div v-if="dbConfig.sslMode === 'verify-ca' || dbConfig.sslMode === 'verify-full'" class="form-floating mt-3 short">
+                        <textarea
+                            v-model="dbConfig.ca"
+                            class="form-control"
+                            placeholder="-----BEGIN CERTIFICATE-----"
+                            style="height: 120px"
+                        />
+                        <label>{{ $t("postgresCaCertificateLabel") }}</label>
+                        <div class="form-text">{{ $t("postgresCaCertificateHelptext") }}</div>
+                    </div>
+                </template>
+
                 <button class="btn btn-primary mt-4 short" type="submit" :disabled="disabledButton">
                     {{ $t("Next") }}
                 </button>
@@ -194,6 +281,10 @@ export default {
                 dbName: "kuma",
                 ssl: false,
                 ca: "",
+                url: "",
+                useConnectionString: false,
+                sslMode: "require",
+                schema: "",
             },
             info: {
                 needSetup: false,
@@ -225,8 +316,30 @@ export default {
             this.info.runningSetup = true;
 
             try {
+                let dbConfig = { ...this.dbConfig };
+
+                if (dbConfig.type === "postgres") {
+                    if (!dbConfig.useConnectionString) {
+                        delete dbConfig.url;
+                    } else {
+                        delete dbConfig.hostname;
+                        delete dbConfig.port;
+                        delete dbConfig.username;
+                        delete dbConfig.password;
+                        delete dbConfig.dbName;
+                    }
+                    delete dbConfig.useConnectionString;
+                    if (dbConfig.sslMode !== "verify-ca" && dbConfig.sslMode !== "verify-full") {
+                        delete dbConfig.ca;
+                    }
+                    if (!dbConfig.schema) delete dbConfig.schema;
+                    // strip mariadb-only fields
+                    delete dbConfig.socketPath;
+                    delete dbConfig.ssl;
+                }
+
                 await axios.post("/setup-database", {
-                    dbConfig: this.dbConfig,
+                    dbConfig,
                 });
                 await sleep(2000);
                 await this.goToMainServerWhenReady();

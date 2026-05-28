@@ -9,6 +9,38 @@ const mysql = require("mysql2/promise");
 const { isSSL, sslKey, sslCert, sslKeyPassphrase } = require("./config");
 const https = require("https");
 
+/*
+ * Environment variables recognized by this setup pipeline.
+ * All vars also support a `_FILE` variant pointing at a file path,
+ * for use with Docker secrets. See getEnvOrFile().
+ *
+ * Common:
+ *   UPTIME_KUMA_DB_TYPE          sqlite | mariadb | embedded-mariadb | postgres
+ *
+ * MariaDB / MySQL (UPTIME_KUMA_DB_TYPE=mariadb):
+ *   UPTIME_KUMA_DB_HOSTNAME      hostname (or use UPTIME_KUMA_DB_SOCKET)
+ *   UPTIME_KUMA_DB_PORT          port (default 3306)
+ *   UPTIME_KUMA_DB_NAME          database name
+ *   UPTIME_KUMA_DB_USERNAME      user
+ *   UPTIME_KUMA_DB_PASSWORD      password
+ *   UPTIME_KUMA_DB_SOCKET        unix socket path (alternative to host:port)
+ *   UPTIME_KUMA_DB_SSL           "true" to enable TLS
+ *   UPTIME_KUMA_DB_CA            PEM-encoded CA certificate
+ *
+ * PostgreSQL (UPTIME_KUMA_DB_TYPE=postgres):
+ *   UPTIME_KUMA_DB_URL           full connection string; takes precedence over fields
+ *                                e.g. postgres://user:pass@host:5432/kuma?sslmode=require
+ *   --- or ---
+ *   UPTIME_KUMA_DB_HOSTNAME      hostname
+ *   UPTIME_KUMA_DB_PORT          port (default 5432)
+ *   UPTIME_KUMA_DB_NAME          database name (default "kuma")
+ *   UPTIME_KUMA_DB_USERNAME      user
+ *   UPTIME_KUMA_DB_PASSWORD      password
+ *   UPTIME_KUMA_DB_SSL_MODE      disable | require | verify-ca | verify-full
+ *   UPTIME_KUMA_DB_SSL_CA        PEM-encoded CA certificate (required for verify-*)
+ *   UPTIME_KUMA_DB_SCHEMA        optional schema for search_path (default "public")
+ */
+
 /**
  * Reads a configuration value from an environment variable or a Docker secrets file.
  * If both the direct env var and the _FILE variant are set, an error is thrown.
@@ -98,16 +130,48 @@ class SetupDatabase {
         if (process.env.UPTIME_KUMA_DB_TYPE) {
             this.needSetup = false;
             log.info("setup-database", "UPTIME_KUMA_DB_TYPE is provided by env, try to override db-config.json");
-            dbConfig.type = process.env.UPTIME_KUMA_DB_TYPE;
-            dbConfig.hostname = process.env.UPTIME_KUMA_DB_HOSTNAME;
-            dbConfig.port = process.env.UPTIME_KUMA_DB_PORT;
-            dbConfig.dbName = process.env.UPTIME_KUMA_DB_NAME;
-            dbConfig.username = getEnvOrFile("UPTIME_KUMA_DB_USERNAME");
-            dbConfig.password = getEnvOrFile("UPTIME_KUMA_DB_PASSWORD");
-            dbConfig.socketPath = process.env.UPTIME_KUMA_DB_SOCKET?.trim();
-            dbConfig.ssl = getEnvOrFile("UPTIME_KUMA_DB_SSL")?.toLowerCase() === "true";
-            dbConfig.ca = getEnvOrFile("UPTIME_KUMA_DB_CA");
-            Database.writeDBConfig(dbConfig);
+
+            if (process.env.UPTIME_KUMA_DB_TYPE === "postgres") {
+                log.info("setup-database", "Configuring PostgreSQL from environment variables");
+                const url = getEnvOrFile("UPTIME_KUMA_DB_URL");
+                const sslMode = process.env.UPTIME_KUMA_DB_SSL_MODE || undefined;
+                const ca = getEnvOrFile("UPTIME_KUMA_DB_SSL_CA") || undefined;
+                const schema = process.env.UPTIME_KUMA_DB_SCHEMA || undefined;
+
+                if (url) {
+                    dbConfig = {
+                        type: "postgres",
+                        url,
+                        ...(sslMode !== undefined && { sslMode }),
+                        ...(ca !== undefined && { ca }),
+                        ...(schema !== undefined && { schema }),
+                    };
+                } else {
+                    dbConfig = {
+                        type: "postgres",
+                        hostname: getEnvOrFile("UPTIME_KUMA_DB_HOSTNAME"),
+                        port: process.env.UPTIME_KUMA_DB_PORT || "5432",
+                        dbName: getEnvOrFile("UPTIME_KUMA_DB_NAME") || "kuma",
+                        username: getEnvOrFile("UPTIME_KUMA_DB_USERNAME"),
+                        password: getEnvOrFile("UPTIME_KUMA_DB_PASSWORD"),
+                        ...(sslMode !== undefined && { sslMode }),
+                        ...(ca !== undefined && { ca }),
+                        ...(schema !== undefined && { schema }),
+                    };
+                }
+                Database.writeDBConfig(dbConfig);
+            } else {
+                dbConfig.type = process.env.UPTIME_KUMA_DB_TYPE;
+                dbConfig.hostname = process.env.UPTIME_KUMA_DB_HOSTNAME;
+                dbConfig.port = process.env.UPTIME_KUMA_DB_PORT;
+                dbConfig.dbName = process.env.UPTIME_KUMA_DB_NAME;
+                dbConfig.username = getEnvOrFile("UPTIME_KUMA_DB_USERNAME");
+                dbConfig.password = getEnvOrFile("UPTIME_KUMA_DB_PASSWORD");
+                dbConfig.socketPath = process.env.UPTIME_KUMA_DB_SOCKET?.trim();
+                dbConfig.ssl = getEnvOrFile("UPTIME_KUMA_DB_SSL")?.toLowerCase() === "true";
+                dbConfig.ca = getEnvOrFile("UPTIME_KUMA_DB_CA");
+                Database.writeDBConfig(dbConfig);
+            }
         }
     }
 
@@ -179,7 +243,7 @@ class SetupDatabase {
 
                 let dbConfig = request.body.dbConfig;
 
-                let supportedDBTypes = ["mariadb", "sqlite"];
+                let supportedDBTypes = ["mariadb", "sqlite", "postgres"];
 
                 if (this.isEnabledEmbeddedMariaDB()) {
                     supportedDBTypes.push("embedded-mariadb");
@@ -263,6 +327,43 @@ class SetupDatabase {
                         });
                         await connection.execute("SELECT 1");
                         connection.end();
+                    } catch (e) {
+                        response.status(400).json("Cannot connect to the database: " + e.message);
+                        this.runningSetup = false;
+                        return;
+                    }
+                }
+
+                // PostgreSQL
+                if (dbConfig.type === "postgres") {
+                    if (!dbConfig.url) {
+                        if (!dbConfig.hostname) {
+                            response.status(400).json("Hostname is required");
+                            this.runningSetup = false;
+                            return;
+                        }
+                        if (!dbConfig.dbName) {
+                            response.status(400).json("Database name is required");
+                            this.runningSetup = false;
+                            return;
+                        }
+                        if (!dbConfig.username) {
+                            response.status(400).json("Username is required");
+                            this.runningSetup = false;
+                            return;
+                        }
+                    }
+
+                    try {
+                        log.info("setup-database", "Testing PostgreSQL connection...");
+                        const pgKnex = require("knex")(
+                            Database.buildPostgresConfig(dbConfig, 1)
+                        );
+                        try {
+                            await pgKnex.raw("SELECT 1");
+                        } finally {
+                            await pgKnex.destroy();
+                        }
                     } catch (e) {
                         response.status(400).json("Cannot connect to the database: " + e.message);
                         this.runningSetup = false;
