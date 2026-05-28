@@ -73,3 +73,39 @@ test("migrate copies tables from sqlite to postgres", { timeout: 5 * 60 * 1000 }
     assert.ok(events.some(e => e.phase === "copy" && e.table === "user"));
     assert.ok(events.some(e => e.phase === "sequences"));
 });
+
+test("migrate aborts when target has tables", { timeout: 5 * 60 * 1000 }, async (t) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kuma-mig-"));
+    const sqlitePath = path.join(tmpDir, "kuma.db");
+    const sqliteKnex = knex({
+        client: "sqlite3",
+        connection: { filename: sqlitePath },
+        useNullAsDefault: true,
+    });
+    await createTables(sqliteKnex);
+    await sqliteKnex.migrate.latest({
+        directory: path.join(__dirname, "../../db/knex_migrations"),
+    });
+    await sqliteKnex.destroy();
+
+    const container = await new PostgreSqlContainer("postgres:16-alpine").start();
+    t.after(async () => container.stop());
+
+    const target = {
+        type: "postgres",
+        hostname: container.getHost(),
+        port: String(container.getPort()),
+        username: container.getUsername(),
+        password: container.getPassword(),
+        dbName: container.getDatabase(),
+    };
+
+    // First migration to fill the DB
+    await migrate({ sqlitePath, target });
+
+    // Second should refuse
+    await assert.rejects(
+        migrate({ sqlitePath, target }),
+        /not empty/i,
+    );
+});
