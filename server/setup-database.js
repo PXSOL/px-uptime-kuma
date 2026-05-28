@@ -119,7 +119,7 @@ class SetupDatabase {
                         type: "postgres",
                         hostname: getEnvOrFile("UPTIME_KUMA_DB_HOSTNAME"),
                         port: process.env.UPTIME_KUMA_DB_PORT || "5432",
-                        dbName: getEnvOrFile("UPTIME_KUMA_DB_DATABASE") || "kuma",
+                        dbName: getEnvOrFile("UPTIME_KUMA_DB_NAME") || "kuma",
                         username: getEnvOrFile("UPTIME_KUMA_DB_USERNAME"),
                         password: getEnvOrFile("UPTIME_KUMA_DB_PASSWORD"),
                         ...(sslMode !== undefined && { sslMode }),
