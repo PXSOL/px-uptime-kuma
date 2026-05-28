@@ -417,6 +417,50 @@ class Database {
                 },
                 pool: mariadbPoolConfig,
             };
+        } else if (dbConfig.type === "postgres") {
+            let connection;
+            if (dbConfig.url) {
+                connection = dbConfig.url;
+            } else {
+                connection = {
+                    host: dbConfig.hostname,
+                    port: dbConfig.port ? parseInt(dbConfig.port) : 5432,
+                    user: dbConfig.username,
+                    password: dbConfig.password,
+                    database: dbConfig.dbName,
+                };
+            }
+
+            const sslMode = dbConfig.sslMode || (dbConfig.ssl ? "require" : "disable");
+            let ssl;
+            if (sslMode !== "disable") {
+                ssl = {
+                    rejectUnauthorized: sslMode === "verify-ca" || sslMode === "verify-full",
+                };
+                if (dbConfig.ca && dbConfig.ca.trim() !== "") {
+                    ssl.ca = dbConfig.ca;
+                }
+            }
+
+            if (typeof connection === "string") {
+                config = {
+                    client: "pg",
+                    connection: ssl ? { connectionString: connection, ssl } : { connectionString: connection },
+                };
+            } else {
+                if (ssl) connection.ssl = ssl;
+                config = { client: "pg", connection };
+            }
+
+            config.pool = {
+                min: 0,
+                max: parsedMaxPoolConnections,
+                idleTimeoutMillis: 30000,
+            };
+
+            if (dbConfig.schema && dbConfig.schema.trim() !== "") {
+                config.searchPath = [dbConfig.schema, "public"];
+            }
         } else {
             throw new Error("Unknown Database type: " + dbConfig.type);
         }
