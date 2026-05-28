@@ -211,7 +211,7 @@ class SetupDatabase {
 
                 let dbConfig = request.body.dbConfig;
 
-                let supportedDBTypes = ["mariadb", "sqlite"];
+                let supportedDBTypes = ["mariadb", "sqlite", "postgres"];
 
                 if (this.isEnabledEmbeddedMariaDB()) {
                     supportedDBTypes.push("embedded-mariadb");
@@ -295,6 +295,43 @@ class SetupDatabase {
                         });
                         await connection.execute("SELECT 1");
                         connection.end();
+                    } catch (e) {
+                        response.status(400).json("Cannot connect to the database: " + e.message);
+                        this.runningSetup = false;
+                        return;
+                    }
+                }
+
+                // PostgreSQL
+                if (dbConfig.type === "postgres") {
+                    if (!dbConfig.url) {
+                        if (!dbConfig.hostname) {
+                            response.status(400).json("Hostname is required");
+                            this.runningSetup = false;
+                            return;
+                        }
+                        if (!dbConfig.dbName) {
+                            response.status(400).json("Database name is required");
+                            this.runningSetup = false;
+                            return;
+                        }
+                        if (!dbConfig.username) {
+                            response.status(400).json("Username is required");
+                            this.runningSetup = false;
+                            return;
+                        }
+                    }
+
+                    try {
+                        log.info("setup-database", "Testing PostgreSQL connection...");
+                        const pgKnex = require("knex")(
+                            Database.buildPostgresConfig(dbConfig, 1)
+                        );
+                        try {
+                            await pgKnex.raw("SELECT 1");
+                        } finally {
+                            await pgKnex.destroy();
+                        }
                     } catch (e) {
                         response.status(400).json("Cannot connect to the database: " + e.message);
                         this.runningSetup = false;
