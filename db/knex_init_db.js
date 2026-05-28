@@ -5,11 +5,13 @@ const { log } = require("../src/util");
  * ⚠️⚠️⚠️⚠️⚠️⚠️ DO NOT ADD ANYTHING HERE!
  * IF YOU NEED TO ADD FIELDS, ADD IT TO ./db/knex_migrations
  * See ./db/knex_migrations/README.md for more information
+ * @param {import("knex").Knex} [knexInstance] Optional knex instance; defaults to R.knex
  * @returns {Promise<void>}
  */
-async function createTables() {
-    log.info("mariadb", "Creating basic tables for MariaDB");
-    const knex = R.knex;
+async function createTables(knexInstance = R.knex) {
+    log.info("db", "Creating base schema");
+    const knex = knexInstance;
+    const isMysql = knex.client.config.client === "mysql2";
 
     // TODO: Should check later if it is really the final patch sql file.
 
@@ -53,7 +55,8 @@ async function createTables() {
     // user
     await knex.schema.createTable("user", (table) => {
         table.increments("id");
-        table.string("username", 255).notNullable().unique().collate("utf8_general_ci");
+        const usernameCol = table.string("username", 255).notNullable().unique();
+        if (isMysql) usernameCol.collate("utf8_general_ci");
         table.string("password", 255);
         table.boolean("active").notNullable().defaultTo(true);
         table.string("timezone", 150);
@@ -184,7 +187,8 @@ async function createTables() {
     // status_page
     await knex.schema.createTable("status_page", (table) => {
         table.increments("id");
-        table.string("slug", 255).notNullable().unique().collate("utf8_general_ci");
+        const slugCol = table.string("slug", 255).notNullable().unique();
+        if (isMysql) slugCol.collate("utf8_general_ci");
         table.string("title", 255).notNullable();
         table.text("description");
         table.string("icon", 255).notNullable();
@@ -382,7 +386,8 @@ async function createTables() {
     // setting
     await knex.schema.createTable("setting", (table) => {
         table.increments("id");
-        table.string("key", 200).notNullable().unique().collate("utf8_general_ci");
+        const keyCol = table.string("key", 200).notNullable().unique();
+        if (isMysql) keyCol.collate("utf8_general_ci");
         table.text("value");
         table.string("type", 20);
     });
@@ -397,7 +402,8 @@ async function createTables() {
             .inTable("status_page")
             .onDelete("CASCADE")
             .onUpdate("CASCADE");
-        table.string("domain").notNullable().unique().collate("utf8_general_ci");
+        const domainCol = table.string("domain").notNullable().unique();
+        if (isMysql) domainCol.collate("utf8_general_ci");
     });
 
     /*********************
@@ -603,7 +609,7 @@ ALTER TABLE monitor
         table.boolean("gamedig_given_port_only").defaultTo(1).notNullable();
     });
 
-    log.info("mariadb", "Created basic tables for MariaDB");
+    log.info("db", "Base schema created successfully");
 }
 
 module.exports = {
