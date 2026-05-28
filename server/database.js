@@ -511,6 +511,8 @@ class Database {
             }
         } else if (dbConfig.type.endsWith("mariadb")) {
             await this.initMariaDB();
+        } else if (dbConfig.type === "postgres") {
+            await this.initPostgres();
         }
     }
 
@@ -560,6 +562,21 @@ class Database {
             await createTables();
         } else {
             log.debug("db", "MariaDB database already exists");
+        }
+    }
+
+    /**
+     * Initialize Postgres base schema if it doesn't exist yet
+     * @returns {Promise<void>}
+     */
+    static async initPostgres() {
+        log.debug("db", "Checking if Postgres base schema exists...");
+        const hasTable = await R.hasTable("docker_host");
+        if (!hasTable) {
+            const { createTables } = require("../db/knex_init_db");
+            await createTables();
+        } else {
+            log.debug("db", "Postgres base schema already exists");
         }
     }
 
