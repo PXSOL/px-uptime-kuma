@@ -3,6 +3,7 @@ const assert = require("node:assert");
 const { PostgreSqlContainer } = require("@testcontainers/postgresql");
 const knex = require("knex");
 const path = require("path");
+const { createTables } = require("../../db/knex_init_db");
 
 describe("PostgreSQL Migration Portability", () => {
     test(
@@ -36,7 +37,10 @@ describe("PostgreSQL Migration Portability", () => {
                 }
             });
 
-            // Run all migrations (this includes creating the base schema)
+            // Bootstrap the base schema (tables that knex migrations depend on)
+            await createTables(k);
+
+            // Run all migrations on top of the base schema
             await k.migrate.latest({
                 directory: path.join(__dirname, "../../db/knex_migrations"),
             });
