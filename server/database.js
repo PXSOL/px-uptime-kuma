@@ -128,6 +128,18 @@ class Database {
     static knexMigrationsPath = "./db/knex_migrations";
 
     /**
+     * Accepted SQL client types
+     * @type {string[]}
+     */
+    static acceptedSqlClient = ["sqlite", "mariadb", "embedded-mariadb", "postgres"];
+
+    /**
+     * Non-SQLite client types (real databases)
+     * @type {string[]}
+     */
+    static noSqliteClient = ["mariadb", "embedded-mariadb", "postgres"];
+
+    /**
      * Initialize the data directory
      * @param {object} args Arguments to initialize DB with
      * @returns {void}
